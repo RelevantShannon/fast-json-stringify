@@ -202,3 +202,29 @@ test('required numbers', (t) => {
     })
   }, { message: 'The value "aaa" cannot be converted to an integer.' })
 })
+
+test('required property not declared in properties does not break commas', (t) => {
+  t.plan(3)
+
+  const schema = {
+    title: 'object with required field not in properties',
+    type: 'object',
+    properties: {
+      a: {
+        type: 'string'
+      },
+      b: {
+        type: 'integer'
+      }
+    },
+    required: ['zz']
+  }
+  const stringify = build(schema)
+
+  t.assert.equal(stringify({ zz: 1, b: 2 }), '{"b":2}')
+  t.assert.equal(stringify({ zz: 1, a: 'x', b: 2 }), '{"a":"x","b":2}')
+
+  t.assert.throws(() => {
+    stringify({ a: 'x' })
+  }, { message: '"zz" is required!' })
+})

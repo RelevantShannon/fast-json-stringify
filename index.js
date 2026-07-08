@@ -16,6 +16,7 @@ let largeArrayMechanism = 'default'
 const serializerFns = `
 const {
   asString,
+  asInteger,
   asNumber,
   asBoolean,
   asDateTime,
@@ -23,8 +24,6 @@ const {
   asTime,
   asUnsafeString
 } = serializer
-
-const asInteger = serializer.asInteger.bind(serializer)
 
 `
 
@@ -375,18 +374,16 @@ function buildInnerObject (context, location, objVar) {
     }
   }
 
-  code += 'json += JSON_STR_BEGIN_OBJECT\n'
-
   const localUid = context.uid++
   let addComma = ''
 
-  if (requiredProperties.length > 0) {
-    // If we have required properties, we know that at least one property will be serialized.
-    // We can avoid the runtime check for the comma.
+  // The first sorted property is required, so it is always serialized: the
+  // comma of every subsequent property can be emitted unconditionally and
+  // folded into the property key literal.
+  const firstPropertyIsRequired =
+    propertiesKeys.length > 0 && requiredProperties.includes(propertiesKeys[0])
 
-    // The first property is required, so we don't need a comma.
-    // For the subsequent properties, we can blindly add a comma.
-
+  if (firstPropertyIsRequired) {
     for (let i = 0; i < propertiesKeys.length; i++) {
       const key = propertiesKeys[i]
       const propertyLocation = propertiesLocation.getPropertyLocation(key)
@@ -401,22 +398,20 @@ function buildInnerObject (context, location, objVar) {
       const defaultValue = resolvedLocation.schema.default
       const isRequired = requiredProperties.includes(key)
 
-      // i === 0 means it's the first property, and it IS required (due to sort). No comma.
-      // i > 0 means it follows a required property (or a sequence starting with one). Unconditional comma.
-      const currentAddComma = i === 0 ? '' : 'json += JSON_STR_COMMA'
+      // The comma (or the object opening brace for the first property) is
+      // folded into the key literal to serialize them with a single append.
+      const keyPrefix = i === 0 ? '{' : ','
 
       code += `
       const ${value} = ${objVar}[${sanitizedKey}]
       if (${value} !== undefined) {
-        ${currentAddComma}
-        json += ${JSON.stringify(sanitizedKey + ':')}
+        json += ${JSON.stringify(keyPrefix + sanitizedKey + ':')}
         ${buildValue(context, resolvedLocation, `${value}`)}
       }`
 
       if (defaultValue !== undefined) {
         code += ` else {
-        ${currentAddComma}
-        json += ${JSON.stringify(sanitizedKey + ':' + JSON.stringify(defaultValue))}
+        json += ${JSON.stringify(keyPrefix + sanitizedKey + ':' + JSON.stringify(defaultValue))}
       }
       `
       } else if (isRequired) {
@@ -431,6 +426,8 @@ function buildInnerObject (context, location, objVar) {
 
     addComma = 'json += JSON_STR_COMMA'
   } else {
+    code += 'json += JSON_STR_BEGIN_OBJECT\n'
+
     const needsRuntimeComma = propertiesKeys.length > 1 || schema.patternProperties || (schema.additionalProperties !== undefined && schema.additionalProperties !== false)
 
     if (needsRuntimeComma) {
@@ -449,18 +446,36 @@ function buildInnerObject (context, location, objVar) {
       const defaultValue = propertyLocation.schema.default
       const isRequired = requiredProperties.includes(key) // Should be false here but good to keep
 
+      // The comma is folded into the key literal, so each branch appends the
+      // separator and the key with a single string concatenation.
+      const emitKey = needsRuntimeComma
+        ? `if (addComma_${localUid}) {
+              json += ${JSON.stringify(',' + sanitizedKey + ':')}
+            } else {
+              addComma_${localUid} = true
+              json += ${JSON.stringify(sanitizedKey + ':')}
+            }`
+        : `json += ${JSON.stringify(sanitizedKey + ':')}`
+
       code += `
           const ${value} = ${objVar}[${sanitizedKey}]
           if (${value} !== undefined) {
-            ${addComma}
-            json += ${JSON.stringify(sanitizedKey + ':')}
+            ${emitKey}
             ${buildValue(context, propertyLocation, `${value}`)}
           }`
 
       if (defaultValue !== undefined) {
+        const defaultJson = JSON.stringify(defaultValue)
+        const emitDefault = needsRuntimeComma
+          ? `if (addComma_${localUid}) {
+                json += ${JSON.stringify(',' + sanitizedKey + ':' + defaultJson)}
+              } else {
+                addComma_${localUid} = true
+                json += ${JSON.stringify(sanitizedKey + ':' + defaultJson)}
+              }`
+          : `json += ${JSON.stringify(sanitizedKey + ':' + defaultJson)}`
         code += ` else {
-            ${addComma}
-            json += ${JSON.stringify(sanitizedKey + ':' + JSON.stringify(defaultValue))}
+            ${emitDefault}
           }
           `
       } else if (isRequired) {
