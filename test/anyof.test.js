@@ -387,6 +387,48 @@ test('anyOf and $ref - multiple external $ref', (t) => {
   t.assert.equal(output, '{"obj":{"prop":{"prop2":"test"}}}')
 })
 
+test('anyOf with registered $ref branches validates directly against the ref target', (t) => {
+  t.plan(3)
+
+  const schema = {
+    title: 'anyOf with registered $ref branches',
+    type: 'object',
+    properties: {
+      content: {
+        anyOf: [
+          { $ref: 'Foo#' },
+          { $ref: 'Bar#/definitions/Baz' }
+        ]
+      }
+    }
+  }
+  const externalSchema = {
+    Foo: {
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      required: ['a'],
+      additionalProperties: false
+    },
+    Bar: {
+      definitions: {
+        Baz: {
+          type: 'object',
+          properties: { b: { type: 'string' } },
+          required: ['b'],
+          additionalProperties: false
+        }
+      }
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(code.includes('validator.validate("Foo#"'), 'validates directly against the bare registered id')
+  t.assert.ok(code.includes('validator.validate("Bar#/definitions/Baz"'), 'validates directly against the registered sub-path ref')
+
+  const stringify = build(schema, { schema: externalSchema })
+  t.assert.equal(stringify({ content: { b: 'yo' } }), '{"content":{"b":"yo"}}')
+})
+
 test('anyOf looks for all of the array items', (t) => {
   t.plan(1)
 

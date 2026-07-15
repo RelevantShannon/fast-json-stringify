@@ -538,3 +538,115 @@ test('if-then-else with allOf', (t) => {
   t.assert.doesNotThrow(() => JSON.parse(output))
   t.assert.equal(output, '{"base":"test","foo":"value"}')
 })
+
+test('if with a bare top-level $ref validates directly against the registered schema', (t) => {
+  t.plan(2)
+
+  const schema = {
+    type: 'object',
+    if: { $ref: 'IsFoo#' },
+    then: {
+      type: 'object',
+      properties: {
+        foo: { type: 'string' }
+      }
+    },
+    else: {
+      type: 'object',
+      properties: {
+        bar: { type: 'string' }
+      }
+    }
+  }
+  const externalSchema = {
+    IsFoo: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', const: 'foo' }
+      },
+      required: ['kind']
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(code.includes('validator.validate("IsFoo#"'), 'validates directly against the bare registered id')
+
+  const stringify = build(schema, { schema: externalSchema })
+  t.assert.equal(stringify({ kind: 'foo', foo: 'value', bar: 'ignored' }), '{"foo":"value"}')
+})
+
+test('if with a $ref into a JSON-pointer sub-path validates directly against that sub-path', (t) => {
+  t.plan(2)
+
+  const schema = {
+    type: 'object',
+    if: { $ref: 'Rules#/definitions/IsFoo' },
+    then: {
+      type: 'object',
+      properties: {
+        foo: { type: 'string' }
+      }
+    },
+    else: {
+      type: 'object',
+      properties: {
+        bar: { type: 'string' }
+      }
+    }
+  }
+  const externalSchema = {
+    Rules: {
+      definitions: {
+        IsFoo: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', const: 'foo' }
+          },
+          required: ['kind']
+        }
+      }
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(code.includes('validator.validate("Rules#/definitions/IsFoo"'), 'validates directly against the registered sub-path ref')
+
+  const stringify = build(schema, { schema: externalSchema })
+  t.assert.equal(stringify({ kind: 'foo', foo: 'value', bar: 'ignored' }), '{"foo":"value"}')
+})
+
+test('if with a $ref that has sibling keywords is left unchanged', (t) => {
+  t.plan(2)
+
+  const schema = {
+    type: 'object',
+    if: { $ref: 'IsFoo#', required: ['extra'] },
+    then: {
+      type: 'object',
+      properties: {
+        foo: { type: 'string' }
+      }
+    },
+    else: {
+      type: 'object',
+      properties: {
+        bar: { type: 'string' }
+      }
+    }
+  }
+  const externalSchema = {
+    IsFoo: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', const: 'foo' }
+      },
+      required: ['kind']
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(!code.includes('validator.validate("IsFoo#"'), 'ref with sibling keywords is not redirected')
+
+  const stringify = build(schema, { schema: externalSchema })
+  t.assert.equal(stringify({ kind: 'foo', foo: 'ignored', bar: 'fallback' }), '{"bar":"fallback"}')
+})
