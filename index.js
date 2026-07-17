@@ -256,7 +256,10 @@ function build (schema, options) {
   }
 
   const serializer = new Serializer(options)
-  const validator = new Validator(options.ajv)
+  const validator = new Validator(
+    options.ajv,
+    options.mode === 'standalone' && options.inlineValidators
+  )
 
   for (const schemaId of context.validatorSchemasIds) {
     const schema = context.refResolver.getSchema(schemaId)
