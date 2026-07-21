@@ -15,10 +15,14 @@ const bench = new Bench({
 })
 
 const FJS = require('..')
-const stringify = FJS(benchmark.schema)
+const stringify = benchmark.compile ? null : FJS(benchmark.schema, benchmark.options)
 
 bench.add(benchmark.name, () => {
-  stringify(benchmark.input)
+  if (benchmark.compile) {
+    FJS(benchmark.schema, benchmark.options)(benchmark.input)
+  } else {
+    stringify(benchmark.input)
+  }
 }).run().then(() => {
   const task = bench.tasks[0]
   const hz = task.result.throughput.mean // ops/sec

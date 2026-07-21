@@ -301,6 +301,92 @@ const benchmarks = [
     input: { firstName: 'Max', lastName: 'Power', age: 22 }
   },
   {
+    name: 'oneOf external refs compile and first stringify',
+    compile: true,
+    schema: {
+      title: 'External refs oneOf schema',
+      type: 'object',
+      properties: {
+        content: {
+          oneOf: [
+            { $ref: 'BenchmarkFoo#' },
+            { $ref: 'BenchmarkBar#' },
+            { $ref: 'BenchmarkBaz#' }
+          ]
+        }
+      }
+    },
+    options: {
+      schema: {
+        BenchmarkFoo: {
+          type: 'object',
+          properties: {
+            kind: { const: 'foo' },
+            title: { type: 'string' },
+            count: { type: 'integer' },
+            flags: {
+              type: 'array',
+              items: { type: 'string' }
+            }
+          },
+          required: ['kind', 'title', 'count', 'flags'],
+          additionalProperties: false
+        },
+        BenchmarkBar: {
+          type: 'object',
+          properties: {
+            kind: { const: 'bar' },
+            name: { type: 'string' },
+            value: { type: 'number' },
+            meta: {
+              type: 'object',
+              properties: {
+                active: { type: 'boolean' },
+                tags: {
+                  type: 'array',
+                  items: { type: 'string' }
+                }
+              },
+              required: ['active', 'tags'],
+              additionalProperties: false
+            }
+          },
+          required: ['kind', 'name', 'value', 'meta'],
+          additionalProperties: false
+        },
+        BenchmarkBaz: {
+          type: 'object',
+          properties: {
+            kind: { const: 'baz' },
+            id: { type: 'string' },
+            nested: {
+              type: 'object',
+              properties: {
+                score: { type: 'number' },
+                note: { type: 'string' }
+              },
+              required: ['score', 'note'],
+              additionalProperties: false
+            }
+          },
+          required: ['kind', 'id', 'nested'],
+          additionalProperties: false
+        }
+      }
+    },
+    input: {
+      content: {
+        kind: 'bar',
+        name: 'benchmark',
+        value: 42.5,
+        meta: {
+          active: true,
+          tags: ['one', 'two', 'three']
+        }
+      }
+    }
+  },
+  {
     name: 'object with const string property',
     schema: {
       type: 'object',
