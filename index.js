@@ -13,6 +13,8 @@ const mergeSchemas = require('./lib/merge-schemas')
 let largeArraySize = 2e4
 let largeArrayMechanism = 'default'
 
+const NAMED_FRAGMENT_REF = /^#[a-z_][-\w._]*$/i
+
 const serializerFns = `
 const {
   asString,
@@ -118,7 +120,7 @@ function getValidatorSchemaRef (context, location) {
   const refSchemaId = hashIndex === -1 ? ref : ref.slice(0, hashIndex)
   const refJsonPointer = hashIndex === -1 ? '' : ref.slice(hashIndex)
   const isBareRef = refJsonPointer === '' || refJsonPointer === '#'
-  const isNamedFragmentRef = /^#[A-Za-z_][-A-Za-z0-9._]*$/.test(refJsonPointer)
+  const isNamedFragmentRef = NAMED_FRAGMENT_REF.test(refJsonPointer)
   const isJsonPointerRef = refJsonPointer.startsWith('#/')
 
   if (
