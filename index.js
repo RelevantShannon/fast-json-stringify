@@ -13,6 +13,8 @@ const mergeSchemas = require('./lib/merge-schemas')
 let largeArraySize = 2e4
 let largeArrayMechanism = 'default'
 
+const NAMED_FRAGMENT_REF = /^#[a-z_][-\w._]*$/i
+
 const serializerFns = `
 const {
   asString,
@@ -97,6 +99,51 @@ function getSafeSchemaRef (context, location) {
   if (schemaRef.startsWith(context.rootSchemaId)) {
     schemaRef = schemaRef.replace(context.rootSchemaId, '') || '#'
   }
+  return schemaRef
+}
+
+function getValidatorSchemaRef (context, location) {
+  let schemaRef = location.getSchemaRef()
+  const schema = location.schema
+
+  // A schema that is only a registered $ref can validate against that target
+  // instead of a JSON-pointer path through the root schema.
+  if (
+    typeof schema.$ref !== 'string' ||
+    Object.keys(schema).length !== 1
+  ) {
+    return schemaRef
+  }
+
+  const ref = schema.$ref
+  const hashIndex = ref.indexOf('#')
+  const refSchemaId = hashIndex === -1 ? ref : ref.slice(0, hashIndex)
+  const refJsonPointer = hashIndex === -1 ? '' : ref.slice(hashIndex)
+  const isBareRef = refJsonPointer === '' || refJsonPointer === '#'
+  const isNamedFragmentRef = NAMED_FRAGMENT_REF.test(refJsonPointer)
+  const isJsonPointerRef = refJsonPointer.startsWith('#/')
+
+  if (
+    (isBareRef || isNamedFragmentRef || isJsonPointerRef) &&
+    refSchemaId &&
+    context.refResolver.hasSchema(refSchemaId)
+  ) {
+    const refSchema = context.refResolver.getSchema(refSchemaId)
+    const refSubSchema = isBareRef
+      ? refSchema
+      : context.refResolver.getSchema(refSchemaId, refJsonPointer)
+    const hasRelativeSchemaId = (
+      typeof refSchema.$id === 'string' &&
+      refSchema.$id.charAt(0) === '#'
+    )
+    if (
+      refSubSchema !== null &&
+      (!hasRelativeSchemaId || refSchema.$id === refJsonPointer)
+    ) {
+      schemaRef = refSchemaId + (isBareRef ? '#' : refJsonPointer)
+    }
+  }
+
   return schemaRef
 }
 
@@ -1148,7 +1195,7 @@ function buildOneOf (context, location, input) {
     }
 
     const nestedResult = buildValue(context, mergedLocation, input)
-    const schemaRef = optionLocation.getSchemaRef()
+    const schemaRef = getValidatorSchemaRef(context, optionLocation)
 
     code += `
       ${index === 0 ? 'if' : 'else if'}(validator.validate("${schemaRef}", ${input})) {
@@ -1181,7 +1228,7 @@ function buildIfThenElse (context, location, input) {
   )
 
   const ifLocation = location.getPropertyLocation('if')
-  const ifSchemaRef = ifLocation.getSchemaRef()
+  const ifSchemaRef = getValidatorSchemaRef(context, ifLocation)
 
   const thenLocation = location.getPropertyLocation('then')
   let thenMergedSchemaId = context.mergedSchemasIds.get(thenSchema)

@@ -348,6 +348,248 @@ test('oneOf and $ref - multiple external $ref', (t) => {
   t.assert.equal(output, '{"obj":{"prop":{"prop2":"test"}}}')
 })
 
+test('oneOf with a bare top-level $ref branch validates directly against the registered schema, not a root-relative pointer', (t) => {
+  t.plan(3)
+
+  const schema = {
+    title: 'oneOf with bare $ref branches',
+    type: 'object',
+    properties: {
+      content: {
+        oneOf: [
+          { $ref: 'Foo#' },
+          { $ref: 'Bar#' }
+        ]
+      }
+    }
+  }
+  const externalSchema = {
+    Foo: {
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      required: ['a'],
+      additionalProperties: false
+    },
+    Bar: {
+      type: 'object',
+      properties: { b: { type: 'string' } },
+      required: ['b'],
+      additionalProperties: false
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(code.includes('validator.validate("Foo#"'), 'validates directly against the bare registered id')
+  t.assert.ok(code.includes('validator.validate("Bar#"'), 'validates directly against the bare registered id')
+
+  const stringify = build(schema, { schema: externalSchema })
+  t.assert.equal(stringify({ content: { b: 'yo' } }), '{"content":{"b":"yo"}}')
+})
+
+test('oneOf with a bare top-level $ref branch to a $id schema validates directly against the registered schema', (t) => {
+  t.plan(2)
+
+  const schema = {
+    title: 'oneOf with bare $id $ref branch',
+    type: 'object',
+    properties: {
+      content: {
+        oneOf: [
+          { $ref: 'urn:fjs:test:Foo#' },
+          { type: 'null' }
+        ]
+      }
+    }
+  }
+  const externalSchema = {
+    Foo: {
+      $id: 'urn:fjs:test:Foo',
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      required: ['a'],
+      additionalProperties: false
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(code.includes('validator.validate("urn:fjs:test:Foo#"'), 'validates directly against the bare registered $id')
+
+  const stringify = build(schema, { schema: externalSchema })
+  t.assert.equal(stringify({ content: { a: 'yo' } }), '{"content":{"a":"yo"}}')
+})
+
+test('oneOf with a bare top-level $ref branch to a relative $id schema is left unchanged', (t) => {
+  t.plan(1)
+
+  const schema = {
+    title: 'oneOf with bare $ref branch to relative $id',
+    type: 'object',
+    properties: {
+      content: {
+        oneOf: [
+          { $ref: 'Foo#' },
+          { type: 'null' }
+        ]
+      }
+    }
+  }
+  const externalSchema = {
+    Foo: {
+      $id: '#foo',
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      required: ['a']
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(!code.includes('validator.validate("Foo#"'), 'relative $id schema is not redirected to the bare parent id')
+})
+
+test('oneOf with a $ref branch to a relative root $id validates directly against the registered schema', (t) => {
+  t.plan(2)
+
+  const schema = {
+    title: 'oneOf with $ref branch to relative root $id',
+    type: 'object',
+    properties: {
+      content: {
+        oneOf: [
+          { $ref: 'Foo#foo' },
+          { type: 'null' }
+        ]
+      }
+    }
+  }
+  const externalSchema = {
+    Foo: {
+      $id: '#foo',
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      required: ['a']
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(code.includes('validator.validate("Foo#foo"'), 'validates directly against the relative root $id')
+
+  const stringify = build(schema, { schema: externalSchema })
+  t.assert.equal(stringify({ content: { a: 'yo' } }), '{"content":{"a":"yo"}}')
+})
+
+test('oneOf with a named-fragment $ref branch validates directly against the registered schema anchor', (t) => {
+  t.plan(2)
+
+  const schema = {
+    title: 'oneOf with named-fragment $ref branch',
+    type: 'object',
+    properties: {
+      content: {
+        oneOf: [
+          { $ref: 'Foo#tag' },
+          { type: 'null' }
+        ]
+      }
+    }
+  }
+  const externalSchema = {
+    Foo: {
+      $id: 'Foo',
+      $defs: {
+        tag: { $id: '#tag', type: 'string' }
+      }
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(code.includes('validator.validate("Foo#tag"'), 'validates directly against the registered schema anchor')
+
+  const stringify = build(schema, { schema: externalSchema })
+  t.assert.equal(stringify({ content: 'yo' }), '{"content":"yo"}')
+})
+
+test('oneOf with a $ref into a JSON-pointer sub-path validates directly against that sub-path', (t) => {
+  t.plan(2)
+
+  const schema = {
+    title: 'oneOf with a sub-path $ref branch',
+    type: 'object',
+    properties: {
+      content: {
+        oneOf: [
+          { $ref: 'Foo#/definitions/Bar' },
+          { type: 'null' }
+        ]
+      }
+    }
+  }
+  const externalSchema = {
+    Foo: {
+      definitions: {
+        Bar: { type: 'object', properties: { b: { type: 'string' } } }
+      }
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(code.includes('validator.validate("Foo#/definitions/Bar"'), 'validates directly against the sub-path ref')
+
+  const stringify = build(schema, { schema: externalSchema })
+  t.assert.equal(stringify({ content: { b: 'yo' } }), '{"content":{"b":"yo"}}')
+})
+
+test('oneOf with a $ref branch that has sibling keywords is left unchanged', (t) => {
+  t.plan(2)
+
+  const schema = {
+    title: 'oneOf with a $ref branch with sibling keywords',
+    type: 'object',
+    properties: {
+      content: {
+        oneOf: [
+          { $ref: 'Foo#', required: ['c'] },
+          { type: 'null' }
+        ]
+      }
+    }
+  }
+  const externalSchema = {
+    Foo: {
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      required: ['a']
+    }
+  }
+
+  const code = build(schema, { mode: 'standalone', schema: externalSchema })
+  t.assert.ok(!code.includes('validator.validate("Foo#"'), 'ref with sibling keywords is not redirected')
+
+  const stringify = build(schema, { schema: externalSchema })
+  t.assert.throws(() => stringify({ content: { a: 'yo' } }))
+})
+
+test('oneOf with an inline (non-$ref) branch is left unchanged', (t) => {
+  t.plan(1)
+
+  const schema = {
+    title: 'oneOf with an inline branch, no $ref',
+    type: 'object',
+    properties: {
+      content: {
+        oneOf: [
+          { type: 'string' },
+          { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] }
+        ]
+      }
+    }
+  }
+
+  // Should compile and serialize exactly as before -- this is a pure
+  // regression guard, not exercising the new code path at all.
+  const stringify = build(schema)
+  t.assert.equal(stringify({ content: 'hello' }), '{"content":"hello"}')
+})
+
 test('oneOf with enum with more than 100 entries', (t) => {
   t.plan(1)
 
